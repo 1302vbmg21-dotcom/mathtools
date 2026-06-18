@@ -24,6 +24,19 @@
             android:contentDescription="Выбранное изображение"
             android:scaleType="fitCenter" />
 
+        <TextView
+            android:id="@+id/rawOutputView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="#EEEEEE"
+            android:fontFamily="monospace"
+            android:padding="12dp"
+            android:text="Raw logits output появится здесь"
+            android:textColor="#222222"
+            android:textIsSelectable="true"
+            android:textSize="12sp" />
+
         <WebView
             android:id="@+id/webView"
             android:layout_width="match_parent"

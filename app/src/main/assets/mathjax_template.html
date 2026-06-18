@@ -22,7 +22,7 @@
                 }
             },
             chtml: {
-                fontURL: "file:///android_asset/mathjax/fonts/chtml"
+                fontURL: "file:///android_asset/mathjax/es5/output/chtml/fonts/woff-v2"
             },
             startup: {
                 pageReady: function() {
@@ -130,24 +130,19 @@
 
     <script>
         // Флаг готовности MathJax
-        var mathJaxReady = false;
+        window.mathJaxReady = false;
         var pendingLatex = null;
 
         // Функция для рендеринга LaTeX
         function renderLatex(latex) {
-            if (!mathJaxReady) {
+            if (!window.mathJaxReady) {
                 pendingLatex = latex;
                 return;
             }
 
             try {
-                // Экранируем специальные символы
-                var safeLatex = latex.replace(/\\/g, '\\\\');
-                safeLatex = safeLatex.replace(/'/g, "\\'");
-                safeLatex = safeLatex.replace(/"/g, '\\"');
-
                 var content = document.getElementById('formulaContent');
-                content.innerHTML = '\\[' + safeLatex + '\\]';
+                content.textContent = '\\[' + latex + '\\]';
 
                 // Запускаем рендеринг
                 MathJax.typesetPromise()
@@ -160,11 +155,21 @@
                         document.getElementById('status').textContent = '❌ Ошибка рендеринга: ' + err.message;
                         document.getElementById('status').className = 'status error';
                     });
+                return true;
             } catch (e) {
                 console.error('Render error:', e);
                 document.getElementById('status').textContent = '❌ Ошибка: ' + e.message;
                 document.getElementById('status').className = 'status error';
+                return false;
             }
+        }
+
+        function setRawLatex(latex) {
+            pendingLatex = latex;
+            document.getElementById('formulaContent').textContent = latex;
+            document.getElementById('status').textContent = '⏳ MathJax загружается, показан raw LaTeX';
+            document.getElementById('status').className = 'status loading';
+            return true;
         }
 
         // Функция для очистки формулы
@@ -185,7 +190,7 @@
 
         // Обработчик готовности MathJax
         window.MathJaxLoaded = function() {
-            mathJaxReady = true;
+            window.mathJaxReady = true;
             document.getElementById('status').textContent = '✅ MathJax загружен';
             document.getElementById('status').className = 'status success';
 
@@ -198,7 +203,7 @@
 
         // Fallback: если MathJax не загрузился через 10 секунд
         setTimeout(function() {
-            if (!mathJaxReady) {
+            if (!window.mathJaxReady) {
                 document.getElementById('status').textContent = '⚠️ MathJax не загрузился. Проверьте файлы.';
                 document.getElementById('status').className = 'status error';
 
