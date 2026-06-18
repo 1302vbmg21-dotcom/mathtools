@@ -10,63 +10,25 @@
         android:orientation="vertical">
 
         <Button
-            android:id="@+id/btnSelectImage"
+            android:id="@+id/selectButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Выбрать изображение" />
+            android:text="Выбрать изображение с формулой" />
 
         <ImageView
-            android:id="@+id/imagePreview"
+            android:id="@+id/imageView"
             android:layout_width="match_parent"
-            android:layout_height="300dp"
+            android:layout_height="240dp"
             android:layout_marginTop="16dp"
-            android:scaleType="centerCrop"
             android:background="@android:drawable/ic_menu_gallery"
-            android:contentDescription="Preview" />
+            android:contentDescription="Выбранное изображение"
+            android:scaleType="fitCenter" />
 
-        <ProgressBar
-            android:id="@+id/progressBar"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:layout_marginTop="16dp"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/tvRating"
+        <WebView
+            android:id="@+id/webView"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Rating: --"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/tvGeneralTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="General tags:"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/tvGeneralTags"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="---" />
-
-        <TextView
-            android:id="@+id/tvCharacterTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Character tags:"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/tvCharacterTags"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="---" />
+            android:layout_height="360dp"
+            android:layout_marginTop="16dp" />
 
     </LinearLayout>
 </ScrollView>
