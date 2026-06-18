@@ -2,15 +2,14 @@ package com.example.mathtools
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import ai.onnxruntime.*
 import java.io.InputStreamReader
-import kotlin.math.*
 
 class Pix2TextOcr(private val context: Context) {
 
+    private val ortEnvironment: OrtEnvironment = OrtEnvironment.getEnvironment()
     private lateinit var encoderSession: OrtSession
     private lateinit var decoderSession: OrtSession
     private lateinit var tokenizer: JsonObject
@@ -25,8 +24,6 @@ class Pix2TextOcr(private val context: Context) {
 
     private fun loadModel() {
         try {
-            val env = OrtEnvironment.getEnvironment()
-
             // Загружаем ONNX-модели
             val encoderBytes = context.assets.open("pix2text/encoder_model.onnx").readBytes()
             val decoderBytes = context.assets.open("pix2text/decoder_model.onnx").readBytes()
@@ -37,8 +34,8 @@ class Pix2TextOcr(private val context: Context) {
             sessionOptions.setIntraOpNumThreads(4)
             sessionOptions.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
 
-            encoderSession = env.createSession(encoderBytes, sessionOptions)
-            decoderSession = env.createSession(decoderBytes, sessionOptions)
+            encoderSession = ortEnvironment.createSession(encoderBytes, sessionOptions)
+            decoderSession = ortEnvironment.createSession(decoderBytes, sessionOptions)
 
             // Загружаем токенизатор
             val tokenizerStream = context.assets.open("pix2text/tokenizer.json")
@@ -55,7 +52,7 @@ class Pix2TextOcr(private val context: Context) {
         val pixelValues = preprocessImage(imageBitmap)
 
         // 2. Encoder
-        val encoderInputs = mapOf("pixel_values" to OnnxTensor.createTensor(encoderSession.environment, pixelValues))
+        val encoderInputs = mapOf("pixel_values" to OnnxTensor.createTensor(ortEnvironment, pixelValues))
         val encoderOutputs = encoderSession.run(encoderInputs)
         val encoderHiddenState = encoderOutputs.get("last_hidden_state").get() as OnnxTensor
 
@@ -100,8 +97,8 @@ class Pix2TextOcr(private val context: Context) {
             val attentionMask = LongArray(inputIds.size) { 1L }
 
             val decoderInputs = mapOf(
-                "input_ids" to OnnxTensor.createTensor(decoderSession.environment, arrayOf(inputIds)),
-                "attention_mask" to OnnxTensor.createTensor(decoderSession.environment, arrayOf(attentionMask)),
+                "input_ids" to OnnxTensor.createTensor(ortEnvironment, arrayOf(inputIds)),
+                "attention_mask" to OnnxTensor.createTensor(ortEnvironment, arrayOf(attentionMask)),
                 "encoder_hidden_states" to encoderState
             )
 
@@ -145,7 +142,7 @@ class Pix2TextOcr(private val context: Context) {
             if (tokenStr.startsWith("<") && tokenStr.endsWith(">")) continue
 
             // Заменяем ## на пробел (для BPE-токенизаторов)
-            var cleanToken = tokenStr.replace("Ġ", " ").replace("</w>", "")
+            val cleanToken = tokenStr.replace("Ġ", " ").replace("</w>", "")
             result.append(cleanToken)
         }
 
