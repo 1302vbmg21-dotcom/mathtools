@@ -6,6 +6,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import ai.onnxruntime.*
 import java.io.InputStreamReader
+import java.nio.charset.Charset
 
 class Pix2TextOcr(private val context: Context) {
 
@@ -23,14 +24,69 @@ class Pix2TextOcr(private val context: Context) {
     private lateinit var encoderSession: OrtSession
     private lateinit var decoderSession: OrtSession
     private lateinit var tokenizer: JsonObject
+    private lateinit var tokenizerConfig: JsonObject
+    private lateinit var generationConfig: JsonObject
+    private lateinit var modelConfig: JsonObject
+    private lateinit var preprocessorConfig: JsonObject
+    private val specialTokenIds = mutableSetOf<Long>()
     private val gson = Gson()
 
-    // Параметры генерации из generation_config.json
-    private val maxLength = 256
-    private val imageSize = 384
+    // Параметры генерации и препроцессинга берутся из json рядом с ONNX-моделями.
+    private var maxNewTokens = 256
+    private var decoderStartTokenId = 2L
+    private var eosTokenId = 2L
+    private var padTokenId = 0L
+    private var imageWidth = 384
+    private var imageHeight = 384
+    private var rescaleFactor = 1.0f / 255.0f
+    private var imageMean = floatArrayOf(0.5f, 0.5f, 0.5f)
+    private var imageStd = floatArrayOf(0.5f, 0.5f, 0.5f)
 
     init {
         loadModel()
+    }
+
+
+    private fun readJsonAsset(path: String): JsonObject {
+        context.assets.open(path).use { stream ->
+            return gson.fromJson(InputStreamReader(stream), JsonObject::class.java)
+        }
+    }
+
+    private fun applyModelConfigs() {
+        decoderStartTokenId = getConfigLong("decoder_start_token_id", 2L)
+        eosTokenId = getConfigLong("eos_token_id", 2L)
+        padTokenId = getConfigLong("pad_token_id", 0L)
+        maxNewTokens = getConfigLong("max_new_tokens", getConfigLong("max_length", 256L)).toInt()
+
+        val size = preprocessorConfig.getAsJsonObject("size")
+        imageWidth = size?.get("width")?.asInt ?: 384
+        imageHeight = size?.get("height")?.asInt ?: 384
+        rescaleFactor = preprocessorConfig.get("rescale_factor")?.asFloat ?: (1.0f / 255.0f)
+        imageMean = readFloatArray(preprocessorConfig.getAsJsonArray("image_mean"), floatArrayOf(0.5f, 0.5f, 0.5f))
+        imageStd = readFloatArray(preprocessorConfig.getAsJsonArray("image_std"), floatArrayOf(0.5f, 0.5f, 0.5f))
+
+        specialTokenIds.clear()
+        specialTokenIds.add(decoderStartTokenId)
+        specialTokenIds.add(eosTokenId)
+        specialTokenIds.add(padTokenId)
+        tokenizerConfig.getAsJsonObject("added_tokens_decoder")?.entrySet()?.forEach { (id, token) ->
+            if (token.asJsonObject.get("special")?.asBoolean == true) {
+                specialTokenIds.add(id.toLong())
+            }
+        }
+    }
+
+    private fun getConfigLong(name: String, defaultValue: Long): Long {
+        generationConfig.get(name)?.let { if (!it.isJsonNull) return it.asLong }
+        modelConfig.get(name)?.let { if (!it.isJsonNull) return it.asLong }
+        modelConfig.getAsJsonObject("decoder")?.get(name)?.let { if (!it.isJsonNull) return it.asLong }
+        return defaultValue
+    }
+
+    private fun readFloatArray(array: com.google.gson.JsonArray?, defaultValue: FloatArray): FloatArray {
+        if (array == null || array.size() < 3) return defaultValue
+        return FloatArray(3) { index -> array[index].asFloat }
     }
 
     private fun loadModel() {
@@ -48,9 +104,13 @@ class Pix2TextOcr(private val context: Context) {
             encoderSession = ortEnvironment.createSession(encoderBytes, sessionOptions)
             decoderSession = ortEnvironment.createSession(decoderBytes, sessionOptions)
 
-            // Загружаем токенизатор
-            val tokenizerStream = context.assets.open("pix2text/tokenizer.json")
-            tokenizer = gson.fromJson(InputStreamReader(tokenizerStream), JsonObject::class.java)
+            // Загружаем конфиги HuggingFace/Optimum, которые использует оригинальный Pix2Text.
+            tokenizer = readJsonAsset("pix2text/tokenizer.json")
+            tokenizerConfig = readJsonAsset("pix2text/tokenizer_config.json")
+            generationConfig = readJsonAsset("pix2text/generation_config.json")
+            modelConfig = readJsonAsset("pix2text/config.json")
+            preprocessorConfig = readJsonAsset("pix2text/preprocessor_config.json")
+            applyModelConfigs()
         } catch (e: Exception) {
             e.printStackTrace()
             throw RuntimeException("Ошибка загрузки модели: ${e.message}")
@@ -82,24 +142,26 @@ class Pix2TextOcr(private val context: Context) {
     }
 
     private fun preprocessImage(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
-        // Resize до 384x384 (как в примере)
-        val resized = Bitmap.createScaledBitmap(bitmap, imageSize, imageSize, true)
+        // Повторяем параметры TrOCRProcessor/DeiTImageProcessor из preprocessor_config.json:
+        // resize -> rescale -> normalize -> NCHW.
+        val resized = Bitmap.createScaledBitmap(bitmap, imageWidth, imageHeight, true)
 
-        // Нормализация: (x / 255 - 0.5) / 0.5
-        val pixels = IntArray(imageSize * imageSize)
-        resized.getPixels(pixels, 0, imageSize, 0, 0, imageSize, imageSize)
+        val pixels = IntArray(imageWidth * imageHeight)
+        resized.getPixels(pixels, 0, imageWidth, 0, 0, imageWidth, imageHeight)
 
-        val channels = Array(3) { Array(imageSize) { FloatArray(imageSize) } }
-        for (y in 0 until imageSize) {
-            for (x in 0 until imageSize) {
-                val pixel = pixels[y * imageSize + x]
-                val r = ((pixel shr 16) and 0xFF) / 255.0f
-                val g = ((pixel shr 8) and 0xFF) / 255.0f
-                val b = (pixel and 0xFF) / 255.0f
+        val channels = Array(3) { Array(imageHeight) { FloatArray(imageWidth) } }
+        for (y in 0 until imageHeight) {
+            for (x in 0 until imageWidth) {
+                val pixel = pixels[y * imageWidth + x]
+                val rgb = floatArrayOf(
+                    ((pixel shr 16) and 0xFF) * rescaleFactor,
+                    ((pixel shr 8) and 0xFF) * rescaleFactor,
+                    (pixel and 0xFF) * rescaleFactor
+                )
 
-                channels[0][y][x] = (r - 0.5f) / 0.5f
-                channels[1][y][x] = (g - 0.5f) / 0.5f
-                channels[2][y][x] = (b - 0.5f) / 0.5f
+                channels[0][y][x] = (rgb[0] - imageMean[0]) / imageStd[0]
+                channels[1][y][x] = (rgb[1] - imageMean[1]) / imageStd[1]
+                channels[2][y][x] = (rgb[2] - imageMean[2]) / imageStd[2]
             }
         }
 
@@ -107,13 +169,10 @@ class Pix2TextOcr(private val context: Context) {
     }
 
     private fun generateDecoder(encoderState: OnnxTensor): DecoderResult {
-        val bosToken = getTokenId("<s>") ?: 0
-        val eosToken = getTokenId("</s>") ?: 2
-
-        val generated = mutableListOf(bosToken)
+        val generated = mutableListOf(decoderStartTokenId.toInt())
         val logitTrace = mutableListOf<String>()
 
-        for (i in 0 until maxLength) {
+        for (i in 0 until maxNewTokens) {
             // Создаем вход для декодера
             val inputIds = generated.map { it.toLong() }.toLongArray()
             val decoderInputs = mapOf(
@@ -142,7 +201,7 @@ class Pix2TextOcr(private val context: Context) {
             )
 
             // Если достигли EOS — завершаем
-            if (maxIdx == eosToken) break
+            if (maxIdx.toLong() == eosTokenId) break
         }
 
         return DecoderResult(
@@ -152,19 +211,12 @@ class Pix2TextOcr(private val context: Context) {
     }
 
     private fun decodeTokens(tokens: List<Long>): String {
-        // Преобразуем токены в текст
-        val result = StringBuilder()
-        for (tokenId in tokens) {
-            val tokenStr = getTokenText(tokenId) ?: continue
-            // Пропускаем специальные токены
-            if (tokenStr.startsWith("<") && tokenStr.endsWith(">")) continue
+        val pieces = tokens
+            .filterNot { specialTokenIds.contains(it) }
+            .mapNotNull { getTokenText(it) }
+            .joinToString(separator = "")
 
-            // Заменяем ## на пробел (для BPE-токенизаторов)
-            val cleanToken = tokenStr.replace("Ġ", " ").replace("</w>", "")
-            result.append(cleanToken)
-        }
-
-        return result.toString()
+        return postProcessLatex(byteLevelDecode(pieces))
     }
 
     private fun getTokenId(token: String): Int? {
@@ -178,6 +230,47 @@ class Pix2TextOcr(private val context: Context) {
             if (id.asLong == tokenId) return token
         }
         return null
+    }
+
+
+    private fun byteLevelDecode(text: String): String {
+        val byteDecoder = byteLevelDecoder()
+        val bytes = ArrayList<Byte>()
+        text.forEach { char ->
+            val value = byteDecoder[char] ?: char.code
+            bytes.add(value.toByte())
+        }
+        return bytes.toByteArray().toString(Charset.forName("UTF-8"))
+    }
+
+    private fun byteLevelDecoder(): Map<Char, Int> {
+        val byteToChar = mutableMapOf<Int, Char>()
+        val visibleBytes = mutableListOf<Int>()
+        visibleBytes.addAll('!'.code..'~'.code)
+        visibleBytes.addAll('¡'.code..'¬'.code)
+        visibleBytes.addAll('®'.code..'ÿ'.code)
+
+        visibleBytes.forEach { byteToChar[it] = it.toChar() }
+        var extra = 0
+        for (byte in 0..255) {
+            if (!byteToChar.containsKey(byte)) {
+                byteToChar[byte] = (256 + extra).toChar()
+                extra++
+            }
+        }
+        return byteToChar.entries.associate { (byte, char) -> char to byte }
+    }
+
+    private fun postProcessLatex(text: String): String {
+        return text
+            .replace(Regex("""\\(hat|bar|vec|tilde|dot|ddot)\s*\{\s*}"""), "")
+            .replace(Regex("""[\^_]\s*\{\s*}"""), "")
+            .replace(Regex("""\\text\s*\{\s*}"""), "")
+            .replace(Regex("""\s+"""), " ")
+            .replace(" \\", "\\")
+            .replace("{ ", "{")
+            .replace(" }", "}")
+            .trim()
     }
 
     fun close() {
