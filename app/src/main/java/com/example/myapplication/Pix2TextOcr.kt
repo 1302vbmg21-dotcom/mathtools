@@ -116,11 +116,8 @@ class Pix2TextOcr(private val context: Context) {
         for (i in 0 until maxLength) {
             // Создаем вход для декодера
             val inputIds = generated.map { it.toLong() }.toLongArray()
-            val attentionMask = LongArray(inputIds.size) { 1L }
-
             val decoderInputs = mapOf(
                 "input_ids" to OnnxTensor.createTensor(ortEnvironment, arrayOf(inputIds)),
-                "attention_mask" to OnnxTensor.createTensor(ortEnvironment, arrayOf(attentionMask)),
                 "encoder_hidden_states" to encoderState
             )
 

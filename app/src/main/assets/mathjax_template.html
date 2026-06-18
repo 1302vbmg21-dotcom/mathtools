@@ -33,20 +33,12 @@
                         }
                     });
                 }
-            },
-            // Загружаем только нужные компоненты
-            loader: {
-                load: [
-                    'input/tex',
-                    'output/chtml',
-                    'adaptors/liteDOM'
-                ]
             }
         };
     </script>
 
     <!-- Загружаем MathJax локально -->
-    <script src="file:///android_asset/mathjax/es5/tex-mml-chtml.js" async></script>
+    <script src="file:///android_asset/mathjax/es5/tex-chtml.js"></script>
 
     <style>
         * {
@@ -188,8 +180,8 @@
             status.className = 'status ' + (type || '');
         }
 
-        // Обработчик готовности MathJax
-        window.MathJaxLoaded = function() {
+        function markMathJaxReady() {
+            if (window.mathJaxReady) return;
             window.mathJaxReady = true;
             document.getElementById('status').textContent = '✅ MathJax загружен';
             document.getElementById('status').className = 'status success';
@@ -199,7 +191,19 @@
                 renderLatex(pendingLatex);
                 pendingLatex = null;
             }
-        };
+        }
+
+        // Обработчик готовности MathJax
+        window.MathJaxLoaded = markMathJaxReady;
+
+        // Дополнительный fallback для Android WebView: иногда startup callback уже прошёл,
+        // но Java/Kotlin ещё не успели проверить window.mathJaxReady.
+        var mathJaxReadyTimer = setInterval(function() {
+            if (window.MathJax && typeof window.MathJax.typesetPromise === 'function') {
+                clearInterval(mathJaxReadyTimer);
+                markMathJaxReady();
+            }
+        }, 200);
 
         // Fallback: если MathJax не загрузился через 10 секунд
         setTimeout(function() {

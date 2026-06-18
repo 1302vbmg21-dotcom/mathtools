@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun pollMathJaxReady(attempt: Int = 0) {
-        webView.evaluateJavascript("window.mathJaxReady === true") { result ->
+        webView.evaluateJavascript("window.mathJaxReady === true || (window.MathJax && typeof window.MathJax.typesetPromise === 'function')") { result ->
             if (result == "true") {
                 markMathJaxReady()
             } else if (attempt < 50) {
