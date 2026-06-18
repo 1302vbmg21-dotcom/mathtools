@@ -154,6 +154,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        ocr.close()
+        if (::ocr.isInitialized) {
+            ocr.close()
+        }
     }
 }
