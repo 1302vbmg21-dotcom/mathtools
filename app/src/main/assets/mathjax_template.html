@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Подключаем локальный MathJax -->
+    <script>
+        // Настройка MathJax
+        MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true,
+                processEnvironments: true,
+                packages: ['base', 'ams', 'noerrors', 'noundefined']
+            },
+            options: {
+                enableMenu: false,
+                renderActions: {
+                    addMenu: []  // Отключаем контекстное меню
+                }
+            },
+            chtml: {
+                fontURL: "file:///android_asset/mathjax/fonts/chtml"
+            },
+            startup: {
+                pageReady: function() {
+                    return MathJax.startup.defaultPageReady().then(function() {
+                        // Уведомляем Android, что MathJax загружен
+                        if (window.MathJaxLoaded) {
+                            window.MathJaxLoaded();
+                        }
+                    });
+                }
+            },
+            // Загружаем только нужные компоненты
+            loader: {
+                load: [
+                    'input/tex',
+                    'output/chtml',
+                    'adaptors/liteDOM'
+                ]
+            }
+        };
+    </script>
+
+    <!-- Загружаем MathJax локально -->
+    <script src="file:///android_asset/mathjax/es5/tex-mml-chtml.js" async></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: #16213e;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+
+        .formula-wrapper {
+            background: #0f3460;
+            border-radius: 12px;
+            padding: 24px;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #533483;
+            overflow-x: auto;
+        }
+
+        .formula-wrapper .math {
+            font-size: 28px;
+            color: #ffffff;
+            line-height: 1.6;
+        }
+
+        .formula-wrapper .math .mjx-chtml {
+            font-size: 24px !important;
+        }
+
+        .status {
+            margin-top: 16px;
+            text-align: center;
+            color: #a8a8b8;
+            font-size: 14px;
+            font-style: italic;
+        }
+
+        .status.loading {
+            color: #f7d44a;
+        }
+
+        .status.success {
+            color: #4caf50;
+        }
+
+        .status.error {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="formulaContainer" class="formula-wrapper">
+            <div id="formulaContent" class="math">
+                \[ \text{Выберите изображение с формулой} \]
+            </div>
+        </div>
+        <div id="status" class="status loading">⏳ Загрузка MathJax...</div>
+    </div>
+
+    <script>
+        // Флаг готовности MathJax
+        var mathJaxReady = false;
+        var pendingLatex = null;
+
+        // Функция для рендеринга LaTeX
+        function renderLatex(latex) {
+            if (!mathJaxReady) {
+                pendingLatex = latex;
+                return;
+            }
+
+            try {
+                // Экранируем специальные символы
+                var safeLatex = latex.replace(/\\/g, '\\\\');
+                safeLatex = safeLatex.replace(/'/g, "\\'");
+                safeLatex = safeLatex.replace(/"/g, '\\"');
+
+                var content = document.getElementById('formulaContent');
+                content.innerHTML = '\\[' + safeLatex + '\\]';
+
+                // Запускаем рендеринг
+                MathJax.typesetPromise()
+                    .then(function() {
+                        document.getElementById('status').textContent = '✅ Формула отображена';
+                        document.getElementById('status').className = 'status success';
+                    })
+                    .catch(function(err) {
+                        console.error('MathJax error:', err);
+                        document.getElementById('status').textContent = '❌ Ошибка рендеринга: ' + err.message;
+                        document.getElementById('status').className = 'status error';
+                    });
+            } catch (e) {
+                console.error('Render error:', e);
+                document.getElementById('status').textContent = '❌ Ошибка: ' + e.message;
+                document.getElementById('status').className = 'status error';
+            }
+        }
+
+        // Функция для очистки формулы
+        function clearFormula() {
+            var content = document.getElementById('formulaContent');
+            content.innerHTML = '\\[ \\text{Формула будет здесь} \\]';
+            MathJax.typesetPromise().catch(function(err) { console.log(err); });
+            document.getElementById('status').textContent = '🧹 Формула очищена';
+            document.getElementById('status').className = 'status';
+        }
+
+        // Функция для установки статуса
+        function setStatus(text, type) {
+            var status = document.getElementById('status');
+            status.textContent = text;
+            status.className = 'status ' + (type || '');
+        }
+
+        // Обработчик готовности MathJax
+        window.MathJaxLoaded = function() {
+            mathJaxReady = true;
+            document.getElementById('status').textContent = '✅ MathJax загружен';
+            document.getElementById('status').className = 'status success';
+
+            // Если есть ожидающий LaTeX - рендерим
+            if (pendingLatex) {
+                renderLatex(pendingLatex);
+                pendingLatex = null;
+            }
+        };
+
+        // Fallback: если MathJax не загрузился через 10 секунд
+        setTimeout(function() {
+            if (!mathJaxReady) {
+                document.getElementById('status').textContent = '⚠️ MathJax не загрузился. Проверьте файлы.';
+                document.getElementById('status').className = 'status error';
+
+                // Показываем сырой LaTeX как fallback
+                if (pendingLatex) {
+                    document.getElementById('formulaContent').textContent = pendingLatex;
+                }
+            }
+        }, 10000);
+
+        // Обработка ошибок загрузки
+        window.addEventListener('error', function(e) {
+            if (e.target.tagName === 'SCRIPT') {
+                document.getElementById('status').textContent = '❌ Ошибка загрузки MathJax: ' + e.target.src;
+                document.getElementById('status').className = 'status error';
+            }
+        }, true);
+
+        console.log('MathJax template loaded');
+    </script>
+</body>
+</html>
