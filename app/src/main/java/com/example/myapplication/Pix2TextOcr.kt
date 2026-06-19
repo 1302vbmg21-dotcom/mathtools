@@ -263,9 +263,9 @@ class Pix2TextOcr(private val context: Context) {
 
     private fun postProcessLatex(text: String): String {
         return text
-            .replace(Regex("""\\(hat|bar|vec|tilde|dot|ddot)\s*\{\s*}"""), "")
-            .replace(Regex("""[\^_]\s*\{\s*}"""), "")
-            .replace(Regex("""\\text\s*\{\s*}"""), "")
+            .replace(Regex("""\\(hat|bar|vec|tilde|dot|ddot)\s*\{\s*\}"""), "")
+            .replace(Regex("""[\^_]\s*\{\s*\}"""), "")
+            .replace(Regex("""\\text\s*\{\s*\}"""), "")
             .replace(Regex("""\s+"""), " ")
             .replace(" \\", "\\")
             .replace("{ ", "{")
